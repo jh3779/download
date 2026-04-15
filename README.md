@@ -69,6 +69,23 @@ git branch -M main
 git push -u origin main
 ```
 
+## 충돌(conflict) 해결 체크리스트
+
+브랜치 병합 중 `README.md` 충돌이 났다면 아래 순서로 해결하세요.
+
+```bash
+# 1) 충돌 마커 확인
+rg -n "^(<<<<<<<|=======|>>>>>>>)" README.md
+
+# 2) 파일 수정 후 스테이징
+git add README.md
+
+# 3) 병합 마무리 커밋
+git commit -m "chore: resolve README merge conflict"
+```
+
+> 이 저장소의 현재 README에는 충돌 마커가 포함되어 있지 않습니다.
+
 ## 참고 문서
 
 - Next.js Route Handlers: https://nextjs.org/docs/app/building-your-application/routing/route-handlers
@@ -76,16 +93,3 @@ git push -u origin main
 - ytdl-core: https://github.com/fent/node-ytdl-core
 - MDN `Blob`: https://developer.mozilla.org/docs/Web/API/Blob
 - MDN `Content-Disposition`: https://developer.mozilla.org/docs/Web/HTTP/Headers/Content-Disposition
-
-## PR가 안 올라갈 때 점검
-
-다음 항목 중 하나가 빠져 있으면 GitHub에서 PR 생성이 되지 않습니다.
-
-1. `origin` 원격 저장소가 등록되어 있는지 확인
-2. 현재 브랜치가 원격으로 push 되었는지 확인
-3. PR 대상 기본 브랜치(`main`)가 원격에 존재하는지 확인
-
-```bash
-git remote -v
-git push -u origin <현재브랜치>
-```
