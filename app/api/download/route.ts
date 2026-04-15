@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "node:stream";
 import ytdl, { videoFormat } from "ytdl-core";
 
@@ -12,13 +12,33 @@ interface ErrorResponse {
   error: string;
 }
 
-const getSafeFilename = (title: string): string => title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 150);
-
 const createError = (message: string, status: number): NextResponse<ErrorResponse> => {
   return NextResponse.json({ error: message }, { status });
 };
 
-export async function POST(request: Request): Promise<NextResponse | Response> {
+const getSafeFilename = (title: string): string => {
+  return title.replace(/[\\/:*?"<>|]/g, "_").trim().slice(0, 150) || "video";
+};
+
+const isSupportedYoutubeHost = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return host === "youtube.com" || host === "m.youtube.com" || host === "youtu.be";
+  } catch {
+    return false;
+  }
+};
+
+const pickBestMp4Format = (formats: videoFormat[]): videoFormat | null => {
+  const progressiveMp4 = formats
+    .filter((format) => format.container === "mp4" && format.hasAudio && format.hasVideo)
+    .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
+
+  return progressiveMp4[0] ?? null;
+};
+
+export async function POST(request: NextRequest): Promise<Response> {
   let body: DownloadRequestBody;
 
   try {
@@ -28,32 +48,41 @@ export async function POST(request: Request): Promise<NextResponse | Response> {
   }
 
   const url = body?.url?.trim();
-  if (!url || !ytdl.validateURL(url)) {
+
+  if (!url || !isSupportedYoutubeHost(url) || !ytdl.validateURL(url)) {
     return createError("유효한 YouTube URL을 입력하세요.", 400);
   }
 
   try {
     const info = await ytdl.getInfo(url);
-    const selectedFormat = ytdl
-      .filterFormats(info.formats, "videoandaudio")
-      .find((format: videoFormat) => format.container === "mp4")
-      ?? ytdl.chooseFormat(info.formats, { quality: "highest", filter: "audioandvideo" });
+    const selectedFormat = pickBestMp4Format(info.formats as videoFormat[]);
 
-    const stream = ytdl.downloadFromInfo(info, {
+    if (!selectedFormat?.itag) {
+      return createError("다운로드 가능한 MP4 포맷을 찾지 못했습니다.", 422);
+    }
+
+    const videoStream = ytdl.downloadFromInfo(info, {
       quality: selectedFormat.itag,
+      requestOptions: {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      },
     });
 
-    stream.on("error", (error: Error) => {
-      console.error("ytdl stream error:", error.message);
+    videoStream.once("error", (error: Error) => {
+      console.error("stream error:", error.message);
     });
 
-    const filename = `${getSafeFilename(info.videoDetails.title || "video")}.mp4`;
+    const filename = `${getSafeFilename(info.videoDetails.title)}.mp4`;
+    const contentLength = selectedFormat.contentLength;
 
-    return new Response(Readable.toWeb(stream) as ReadableStream, {
+    return new Response(Readable.toWeb(videoStream) as ReadableStream, {
       headers: {
         "Content-Type": "video/mp4",
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
         "Cache-Control": "no-store",
+        ...(contentLength ? { "Content-Length": contentLength } : {}),
       },
     });
   } catch (error) {

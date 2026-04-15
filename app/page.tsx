@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 
 interface DownloadRequestBody {
   url: string;
@@ -10,24 +10,32 @@ interface ApiErrorResponse {
   error: string;
 }
 
+const DEFAULT_FILENAME = "video.mp4";
+
 const getFilenameFromDisposition = (value: string | null): string => {
-  if (!value) return "video.mp4";
+  if (!value) return DEFAULT_FILENAME;
+
   const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
   if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+
   const quotedMatch = value.match(/filename="?([^";]+)"?/i);
-  return quotedMatch?.[1] ?? "video.mp4";
+  return quotedMatch?.[1] ?? DEFAULT_FILENAME;
 };
 
 export default function Home(): JSX.Element {
   const [url, setUrl] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>("");
+  const controllerRef = useRef<AbortController | null>(null);
 
   const canSubmit = useMemo(() => url.trim().length > 0 && !loading, [url, loading]);
 
   const onDownload = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (!canSubmit) return;
+
+    controllerRef.current?.abort();
+    controllerRef.current = new AbortController();
 
     setLoading(true);
     setMessage("다운로드를 준비하고 있습니다...");
@@ -41,6 +49,7 @@ export default function Home(): JSX.Element {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
+        signal: controllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -51,18 +60,23 @@ export default function Home(): JSX.Element {
       const blob = await response.blob();
       const filename = getFilenameFromDisposition(response.headers.get("Content-Disposition"));
       const objectUrl = URL.createObjectURL(blob);
+
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
       anchor.download = filename;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(objectUrl);
 
-      setMessage("다운로드가 시작되었습니다.");
+      URL.revokeObjectURL(objectUrl);
+      setMessage(`다운로드가 시작되었습니다: ${filename}`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.";
-      setMessage(errorMessage);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setMessage("기존 요청이 취소되었습니다.");
+      } else {
+        const errorMessage = error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.";
+        setMessage(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
