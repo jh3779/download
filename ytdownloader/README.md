@@ -93,3 +93,4 @@ git push -u origin main
 
 - YouTube 이용약관 및 저작권 정책을 준수해 사용하세요.
 - 일부 영상은 지역/연령/저작권 제한으로 다운로드가 실패할 수 있습니다.
+- 이 앱은 `app/api/download` 서버 라우트를 사용하므로 GitHub Pages(정적 호스팅)에는 배포할 수 없습니다.
